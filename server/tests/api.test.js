@@ -9,7 +9,7 @@ process.env.JWT_EXPIRES_IN = '1h';
 jest.mock('../config/db', () => {
   const users = [];
   const contents = [];
-  let userIdCounter = 1;
+  let userIdCounter = 4;
   let contentIdCounter = 1;
 
   const pool = {
@@ -21,9 +21,14 @@ jest.mock('../config/db', () => {
         return [user ? [user] : []];
       }
 
-      if (q.includes('select id, name, email, role') && q.includes('from users where id')) {
+      if (
+        q.includes('select id, name, email, role') &&
+        q.includes('from users where id')
+      ) {
         const user = users.find((u) => u.id === params[0]);
+
         if (!user) return [[]];
+
         const { password, ...rest } = user;
         return [[rest]];
       }
@@ -38,7 +43,9 @@ jest.mock('../config/db', () => {
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
+
         users.push(user);
+
         return [{ insertId: user.id }];
       }
 
@@ -53,51 +60,91 @@ jest.mock('../config/db', () => {
           status: params[5],
           scheduled_at: params[6],
           created_by: params[7],
-          creator_name: users.find((u) => u.id === params[7])?.name || 'Test User',
-          creator_email: users.find((u) => u.id === params[7])?.email || 'test@test.com',
+          creator_name:
+            users.find((u) => u.id === params[7])?.name || 'Test User',
+          creator_email:
+            users.find((u) => u.id === params[7])?.email || 'test@test.com',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
+
         contents.push(content);
+
         return [{ insertId: content.id }];
       }
 
-      if (q.includes('from social_contents sc') && q.includes('where sc.id')) {
+      if (
+        q.includes('from social_contents sc') &&
+        q.includes('where sc.id')
+      ) {
         const content = contents.find((c) => c.id === params[0]);
         return [content ? [content] : []];
       }
 
-      if (q.includes('from social_contents sc') && q.includes('where 1=1')) {
+      if (
+        q.includes('from social_contents sc') &&
+        q.includes('where 1=1')
+      ) {
         return [contents];
       }
 
+      // UPDATE CONTENT MOCK
       if (q.includes('update social_contents set')) {
-        const content = contents.find((c) => c.id === params[params.length - 1]);
+        const content = contents.find(
+          (c) => c.id === params[params.length - 1]
+        );
+
         if (content) {
-          if (params[0] !== undefined && q.includes('status = ?')) {
-            content.status = params[0];
-          }
+          const fields = [];
+
+          if (q.includes('title = ?')) fields.push('title');
+          if (q.includes('caption = ?')) fields.push('caption');
+          if (q.includes('media_url = ?')) fields.push('media_url');
+          if (q.includes('platform = ?')) fields.push('platform');
+          if (q.includes('hashtags = ?')) fields.push('hashtags');
+          if (q.includes('status = ?')) fields.push('status');
+          if (q.includes('scheduled_at = ?')) fields.push('scheduled_at');
+
+          fields.forEach((field, index) => {
+            content[field] = params[index];
+          });
+
           content.updated_at = new Date().toISOString();
         }
-        return [{ affectedRows: 1 }];
+
+        return [{ affectedRows: content ? 1 : 0 }];
       }
 
       if (q.includes('delete from social_contents')) {
         const idx = contents.findIndex((c) => c.id === params[0]);
-        if (idx >= 0) contents.splice(idx, 1);
+
+        if (idx >= 0) {
+          contents.splice(idx, 1);
+        }
+
         return [{ affectedRows: idx >= 0 ? 1 : 0 }];
       }
 
       if (q.includes('count(*) as total')) {
-        return [[{
-          total: contents.length,
-          draft: contents.filter((c) => c.status === 'draft').length,
-          pending_review: contents.filter((c) => c.status === 'pending_review').length,
-          approved: contents.filter((c) => c.status === 'approved').length,
-          scheduled: contents.filter((c) => c.status === 'scheduled').length,
-          published: contents.filter((c) => c.status === 'published').length,
-          rejected: contents.filter((c) => c.status === 'rejected').length,
-        }]];
+        return [
+          [
+            {
+              total: contents.length,
+              draft: contents.filter((c) => c.status === 'draft').length,
+              pending_review: contents.filter(
+                (c) => c.status === 'pending_review'
+              ).length,
+              approved: contents.filter((c) => c.status === 'approved')
+                .length,
+              scheduled: contents.filter((c) => c.status === 'scheduled')
+                .length,
+              published: contents.filter((c) => c.status === 'published')
+                .length,
+              rejected: contents.filter((c) => c.status === 'rejected')
+                .length,
+            },
+          ],
+        ];
       }
 
       if (q.includes('group by platform')) {
@@ -108,7 +155,7 @@ jest.mock('../config/db', () => {
         return [contents.slice(0, params[params.length - 1])];
       }
 
-      if (q.includes('where sc.status = \'pending_review\'')) {
+      if (q.includes("where sc.status = 'pending_review'")) {
         return [contents.filter((c) => c.status === 'pending_review')];
       }
 
@@ -120,12 +167,16 @@ jest.mock('../config/db', () => {
         return [[]];
       }
 
-      if (q.includes('select id, name, email, role') && q.includes('from users order by')) {
+      if (
+        q.includes('select id, name, email, role') &&
+        q.includes('from users order by')
+      ) {
         return [users.map(({ password, ...u }) => u)];
       }
 
       return [[]];
     }),
+
     _users: users,
     _contents: contents,
   };
@@ -137,12 +188,23 @@ const app = require('../server');
 const pool = require('../config/db');
 
 const generateToken = (user) =>
-  jwt.sign({ id: user.id, email: user.email, role: user.role }, process.env.JWT_SECRET, { expiresIn: '1h' });
+  jwt.sign(
+    {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+    },
+    process.env.JWT_SECRET,
+    {
+      expiresIn: '1h',
+    }
+  );
 
 describe('Social Media Content Platform API', () => {
   let adminToken;
   let creatorToken;
   let reviewerToken;
+
   let adminUser;
   let creatorUser;
   let reviewerUser;
@@ -150,9 +212,29 @@ describe('Social Media Content Platform API', () => {
   beforeAll(async () => {
     const hashedPassword = await bcrypt.hash('Password123!', 10);
 
-    adminUser = { id: 1, name: 'Admin', email: 'admin@test.com', password: hashedPassword, role: 'admin' };
-    creatorUser = { id: 2, name: 'Creator', email: 'creator@test.com', password: hashedPassword, role: 'content_creator' };
-    reviewerUser = { id: 3, name: 'Reviewer', email: 'reviewer@test.com', password: hashedPassword, role: 'reviewer' };
+    adminUser = {
+      id: 1,
+      name: 'Admin',
+      email: 'admin@test.com',
+      password: hashedPassword,
+      role: 'admin',
+    };
+
+    creatorUser = {
+      id: 2,
+      name: 'Creator',
+      email: 'creator@test.com',
+      password: hashedPassword,
+      role: 'content_creator',
+    };
+
+    reviewerUser = {
+      id: 3,
+      name: 'Reviewer',
+      email: 'reviewer@test.com',
+      password: hashedPassword,
+      role: 'reviewer',
+    };
 
     pool._users.push(adminUser, creatorUser, reviewerUser);
 
@@ -165,7 +247,11 @@ describe('Social Media Content Platform API', () => {
     test('POST /api/auth/register - should register a new user', async () => {
       const res = await request(app)
         .post('/api/auth/register')
-        .send({ name: 'New User', email: 'newuser@test.com', password: 'Password123!' });
+        .send({
+          name: 'New User',
+          email: 'newuser@test.com',
+          password: 'Password123!',
+        });
 
       expect(res.status).toBe(201);
       expect(res.body.success).toBe(true);
@@ -176,7 +262,11 @@ describe('Social Media Content Platform API', () => {
     test('POST /api/auth/register - should reject duplicate email', async () => {
       const res = await request(app)
         .post('/api/auth/register')
-        .send({ name: 'Duplicate', email: 'admin@test.com', password: 'Password123!' });
+        .send({
+          name: 'Duplicate',
+          email: 'admin@test.com',
+          password: 'Password123!',
+        });
 
       expect(res.status).toBe(409);
       expect(res.body.success).toBe(false);
@@ -185,7 +275,11 @@ describe('Social Media Content Platform API', () => {
     test('POST /api/auth/register - should reject invalid email', async () => {
       const res = await request(app)
         .post('/api/auth/register')
-        .send({ name: 'Bad Email', email: 'invalid', password: 'Password123!' });
+        .send({
+          name: 'Bad Email',
+          email: 'invalid',
+          password: 'Password123!',
+        });
 
       expect(res.status).toBe(400);
     });
@@ -193,7 +287,11 @@ describe('Social Media Content Platform API', () => {
     test('POST /api/auth/register - should reject short password', async () => {
       const res = await request(app)
         .post('/api/auth/register')
-        .send({ name: 'Short Pass', email: 'short@test.com', password: '123' });
+        .send({
+          name: 'Short Pass',
+          email: 'short@test.com',
+          password: '123',
+        });
 
       expect(res.status).toBe(400);
     });
@@ -201,7 +299,10 @@ describe('Social Media Content Platform API', () => {
     test('POST /api/auth/login - should login with valid credentials', async () => {
       const res = await request(app)
         .post('/api/auth/login')
-        .send({ email: 'admin@test.com', password: 'Password123!' });
+        .send({
+          email: 'admin@test.com',
+          password: 'Password123!',
+        });
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -211,7 +312,10 @@ describe('Social Media Content Platform API', () => {
     test('POST /api/auth/login - should reject invalid login', async () => {
       const res = await request(app)
         .post('/api/auth/login')
-        .send({ email: 'admin@test.com', password: 'WrongPassword!' });
+        .send({
+          email: 'admin@test.com',
+          password: 'WrongPassword!',
+        });
 
       expect(res.status).toBe(401);
       expect(res.body.success).toBe(false);
@@ -228,6 +332,7 @@ describe('Social Media Content Platform API', () => {
 
     test('GET /api/auth/profile - should reject without token', async () => {
       const res = await request(app).get('/api/auth/profile');
+
       expect(res.status).toBe(401);
     });
   });
@@ -248,6 +353,7 @@ describe('Social Media Content Platform API', () => {
 
       expect(res.status).toBe(201);
       expect(res.body.data.content.title).toBe('Test Post');
+
       contentId = res.body.data.content.id;
     });
 
@@ -255,7 +361,9 @@ describe('Social Media Content Platform API', () => {
       const res = await request(app)
         .post('/api/content')
         .set('Authorization', `Bearer ${creatorToken}`)
-        .send({ title: 'Missing fields' });
+        .send({
+          title: 'Missing fields',
+        });
 
       expect(res.status).toBe(400);
     });
@@ -273,7 +381,9 @@ describe('Social Media Content Platform API', () => {
       const res = await request(app)
         .put(`/api/content/${contentId}`)
         .set('Authorization', `Bearer ${creatorToken}`)
-        .send({ title: 'Updated Post' });
+        .send({
+          title: 'Updated Post',
+        });
 
       expect(res.status).toBe(200);
       expect(res.body.data.content.title).toBe('Updated Post');
@@ -292,7 +402,11 @@ describe('Social Media Content Platform API', () => {
       const createRes = await request(app)
         .post('/api/content')
         .set('Authorization', `Bearer ${creatorToken}`)
-        .send({ title: 'To Delete', caption: 'Delete me', platform: 'twitter' });
+        .send({
+          title: 'To Delete',
+          caption: 'Delete me',
+          platform: 'twitter',
+        });
 
       const deleteId = createRes.body.data.content.id;
 
@@ -311,7 +425,11 @@ describe('Social Media Content Platform API', () => {
       const res = await request(app)
         .post('/api/content')
         .set('Authorization', `Bearer ${creatorToken}`)
-        .send({ title: 'Review Test', caption: 'Review this', platform: 'facebook' });
+        .send({
+          title: 'Review Test',
+          caption: 'Review this',
+          platform: 'facebook',
+        });
 
       reviewContentId = res.body.data.content.id;
 
@@ -333,7 +451,9 @@ describe('Social Media Content Platform API', () => {
       const res = await request(app)
         .post(`/api/reviews/${reviewContentId}/approve`)
         .set('Authorization', `Bearer ${reviewerToken}`)
-        .send({ comments: 'Looks good!' });
+        .send({
+          comments: 'Looks good!',
+        });
 
       expect(res.status).toBe(200);
       expect(res.body.data.content.status).toBe('approved');
@@ -343,7 +463,11 @@ describe('Social Media Content Platform API', () => {
       const createRes = await request(app)
         .post('/api/content')
         .set('Authorization', `Bearer ${creatorToken}`)
-        .send({ title: 'Reject Test', caption: 'Reject this', platform: 'linkedin' });
+        .send({
+          title: 'Reject Test',
+          caption: 'Reject this',
+          platform: 'linkedin',
+        });
 
       const rejectId = createRes.body.data.content.id;
 
@@ -354,7 +478,9 @@ describe('Social Media Content Platform API', () => {
       const res = await request(app)
         .post(`/api/reviews/${rejectId}/reject`)
         .set('Authorization', `Bearer ${reviewerToken}`)
-        .send({ comments: 'Needs improvement' });
+        .send({
+          comments: 'Needs improvement',
+        });
 
       expect(res.status).toBe(200);
       expect(res.body.data.content.status).toBe('rejected');
@@ -364,7 +490,9 @@ describe('Social Media Content Platform API', () => {
       const res = await request(app)
         .post(`/api/reviews/${reviewContentId}/reject`)
         .set('Authorization', `Bearer ${reviewerToken}`)
-        .send({ comments: '' });
+        .send({
+          comments: '',
+        });
 
       expect(res.status).toBe(400);
     });
@@ -383,7 +511,11 @@ describe('Social Media Content Platform API', () => {
       const res = await request(app)
         .post('/api/content')
         .set('Authorization', `Bearer ${reviewerToken}`)
-        .send({ title: 'Blocked', caption: 'No access', platform: 'twitter' });
+        .send({
+          title: 'Blocked',
+          caption: 'No access',
+          platform: 'twitter',
+        });
 
       expect(res.status).toBe(403);
     });
